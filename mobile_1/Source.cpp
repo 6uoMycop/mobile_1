@@ -295,7 +295,7 @@ int _cdecl wmain(_In_ int argc, _In_reads_(argc)wchar_t* argv[])
                 if (CXN_SUCCESS == ulRetCode)
                 {
                     ulRetCode = RunClientMode(RemoteBthAddr, 1, (arg[0] == '1' ? 3 : 4));
-                    wprintf(L"Ok\n");
+                    //wprintf(L"Ok\n");
                 }
 
                 memset(g_szRemoteName, 0, sizeof(g_szRemoteName));
@@ -322,7 +322,7 @@ int _cdecl wmain(_In_ int argc, _In_reads_(argc)wchar_t* argv[])
                 if (CXN_SUCCESS == ulRetCode)
                 {
                     ulRetCode = RunClientMode(RemoteBthAddr, 1, (arg[0] == '1' ? 3 : 4));
-                    wprintf(L"Ok\n");
+                    //wprintf(L"Ok\n");
                 }
 
                 memset(g_szRemoteAddr, 0, sizeof(g_szRemoteAddr));
@@ -1029,7 +1029,13 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                 if (sz[0] == -1) // screen
                 {
                     RunClientMode(RemoteBthAddr, 1, 1);
-                    wprintf(L"Ok - server thread\n");
+
+                    if (NULL != remoteName)
+                    {
+                        HeapFree(GetProcessHeap(), 0, remoteName);
+                        remoteName = NULL;
+                    }
+                    //wprintf(L"Ok - server thread\n");
                     continue;
                 }
                 else if (sz[0] == -2) // file
@@ -1057,7 +1063,13 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                         sz[2],
                         0);
                     RunClientMode(RemoteBthAddr, 1, 2, fileName);
-                    wprintf(L"Ok - server thread\n");
+
+                    if (NULL != fileName)
+                    {
+                        HeapFree(GetProcessHeap(), 0, fileName);
+                        fileName = NULL;
+                    }
+                    //wprintf(L"Ok - server thread\n");
                     continue;
                 }
                 else
@@ -1069,8 +1081,18 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
             pszDataBufferIndex = pszDataBuffer;
             uiTotalLengthReceived = 0;
             
+            int percent;
+            char dots[10];
+            memset(dots, '>', 10);
+            char spaces[10];
+            memset(spaces, ' ', 10);
             while (bContinue && (uiTotalLengthReceived <= sz[0]))
             {
+                percent = ((float)uiTotalLengthReceived / (float)sz[0]) * 100;
+                printf("\rProgress: %i%% [", percent);
+                fwrite(dots,   1, percent / 10,                  stdout);
+                fwrite(spaces, 1, 10 - percent / 10, stdout);
+                printf("]");
                 // 
                 // recv() call indicates winsock2 to receive data 
                 // of an expected length over a given connection. 
@@ -1129,6 +1151,10 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                 FILE* file = fopen(pszName, "wb");
                 fwrite(pszDataBuffer, sizeof(char), sz[0], file);
                 fclose(file);
+
+                printf("\rProgress: %i%% [", percent);
+                fwrite(dots, 1, 10, stdout);
+                printf("]\n");
 
                 // auto open
                 system(pszName);
