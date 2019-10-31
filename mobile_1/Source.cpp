@@ -201,6 +201,14 @@ void takeScreenshot(int width, int height)
 
 int _cdecl wmain(_In_ int argc, _In_reads_(argc)wchar_t* argv[])
 {
+    //FILE* input = NULL;
+    //input = fopen("C:\\1.exe", "rb");
+    //fseek(input, 0L, SEEK_END);
+    //int sz = ftell(input) + 4 + 4;
+    ////seek back:
+    //fseek(input, 0L, SEEK_SET);
+
+
     ULONG       ulRetCode = CXN_SUCCESS;
     WSADATA     WSAData = { 0 };
     SOCKADDR_BTH RemoteBthAddr = { 0 };
@@ -353,9 +361,10 @@ ULONG NameToBthAddr(_In_ const LPWSTR pszRemoteName, _Out_ PSOCKADDR_BTH pRemote
 
     ZeroMemory(pRemoteBtAddr, sizeof(*pRemoteBtAddr));
 
-    pWSAQuerySet = (PWSAQUERYSET)HeapAlloc(GetProcessHeap(),
-        HEAP_ZERO_MEMORY,
-        ulPQSSize);
+    pWSAQuerySet = (PWSAQUERYSET)calloc(ulPQSSize, 1);
+    //pWSAQuerySet = (PWSAQUERYSET)HeapAlloc(GetProcessHeap(),
+    //    HEAP_ZERO_MEMORY,
+    //    ulPQSSize);
     if (NULL == pWSAQuerySet)
     {
         iResult = STATUS_NO_MEMORY;
@@ -489,10 +498,12 @@ ULONG NameToBthAddr(_In_ const LPWSTR pszRemoteName, _Out_ PSOCKADDR_BTH pRemote
                         // In such case 3rd parameter "ulPQSSize" of function "WSALookupServiceNext()" receives 
                         // the required size.  So we can use this parameter to reallocate memory for QUERYSET. 
                         // 
-                        HeapFree(GetProcessHeap(), 0, pWSAQuerySet);
-                        pWSAQuerySet = (PWSAQUERYSET)HeapAlloc(GetProcessHeap(),
-                            HEAP_ZERO_MEMORY,
-                            ulPQSSize);
+                        //HeapFree(GetProcessHeap(), 0, pWSAQuerySet);
+                        free(pWSAQuerySet);
+                        pWSAQuerySet = (PWSAQUERYSET)calloc(ulPQSSize, 1);
+                        //pWSAQuerySet = (PWSAQUERYSET)HeapAlloc(GetProcessHeap(),
+                        //    HEAP_ZERO_MEMORY,
+                        //    ulPQSSize);
                         if (NULL == pWSAQuerySet)
                         {
                             wprintf(L"!ERROR! | Unable to allocate memory for WSAQERYSET\n");
@@ -522,7 +533,8 @@ ULONG NameToBthAddr(_In_ const LPWSTR pszRemoteName, _Out_ PSOCKADDR_BTH pRemote
 
     if (NULL != pWSAQuerySet)
     {
-        HeapFree(GetProcessHeap(), 0, pWSAQuerySet);
+        //HeapFree(GetProcessHeap(), 0, pWSAQuerySet);
+        free(pWSAQuerySet);
         pWSAQuerySet = NULL;
     }
 
@@ -560,9 +572,11 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
         // 
         SockAddrBthServer.addressFamily = AF_BTH;
         SockAddrBthServer.serviceClassId = g_guidServiceClass;
-        SockAddrBthServer.port = 30;
+        SockAddrBthServer.port = 0;
         int szName;
         int szDeviceName;
+        int sizeFile; 
+        char* tmp = NULL;
 
         if (mode == 1 || mode == 2) // 1 || 2 // send file
         {
@@ -580,6 +594,11 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
             else if (mode == 2)
             {
                 input = fopen(filePathToSend, "rb");
+                if (input == NULL)
+                {
+                    printf("fopen error\n");
+                    return 2;
+                }
             }
             else
             {
@@ -587,33 +606,19 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
             }
 
             fseek(input, 0L, SEEK_END);
-            sz = ftell(input) + 4 + 4;
+            sizeFile = ftell(input);
+            sz = sizeFile + 4 + 4;
             //seek back:
             fseek(input, 0L, SEEK_SET);
-
-            pszData = (char*)HeapAlloc(GetProcessHeap(),
-                HEAP_ZERO_MEMORY,
-                sz);
-            if (NULL == pszData)
-            {
-                ulRetCode = STATUS_NO_MEMORY;
-                wprintf(L"=CRITICAL= | HeapAlloc failed | out of memory, gle = [%d] \n", GetLastError());
-            }
 
             if (mode == 1)
             {
                 szName = strlen("scrsh.bmp");
-                memcpy(&pszData[4], &szName, 4);
-
-                // set file name
-                memcpy(&pszData[8], "scrsh.bmp", strlen("scrsh.bmp"));
-
-                sz += szName;
             }
             else
             {
                 // set name len
-                char* tmp = filePathToSend;
+                tmp = filePathToSend;
                 char* pch = strtok(filePathToSend, "\\");
                 while (pch != NULL)
                 {
@@ -621,18 +626,39 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
                     pch = strtok(NULL, "\\");
                 }
                 szName = strlen(tmp);
-                memcpy(&pszData[4], &szName, 4);
-                sz += szName;
+            }
+            sz += szName;
 
-                // set file name
+            //pszData = (char*)HeapAlloc(GetProcessHeap(),
+            //    HEAP_ZERO_MEMORY,
+            //    sz);
+            pszData = (char*)calloc(sz, 1);
+            if (NULL == pszData)
+            {
+                ulRetCode = STATUS_NO_MEMORY;
+                wprintf(L"=CRITICAL= | HeapAlloc failed | out of memory, gle = [%d] \n", GetLastError());
+            }
+
+            // set name len
+            memcpy(&pszData[4], &szName, 4);
+
+            // set file name
+            if (mode == 1)
+            {
+                memcpy(&pszData[8], "scrsh.bmp", strlen("scrsh.bmp"));
+            }
+            else
+            {
                 memcpy(&pszData[8], tmp, strlen(tmp));
             }
 
             // set size
             memcpy(&pszData[0], &sz, 4);
-
-            fread((void*)&pszData[8 + szName], sizeof(char), sz - 8 - szName, input);
-
+            //int A = HeapSize(GetProcessHeap(), 0, pszData);
+            fread((void*)&pszData[8 + szName], sizeof(char), sizeFile, input);
+            //A=HeapSize(GetProcessHeap(), 0, pszData);
+            //pszData[A] = '\\';
+            
             fclose(input);
         }
         else if (mode == 3 || mode == 4) // send request
@@ -640,9 +666,10 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
             szDeviceName = wcslen(g_szMyName) * sizeof(wchar_t);
             szName = strlen(g_szPath);
             sz = 4 + 4 + szDeviceName + 4 + szName;
-            pszData = (char*)HeapAlloc(GetProcessHeap(),
-                HEAP_ZERO_MEMORY,
-                sz);
+            //pszData = (char*)HeapAlloc(GetProcessHeap(),
+            //    HEAP_ZERO_MEMORY,
+            //    sz);
+            pszData = (char*)calloc(sz, 1);
             if (NULL == pszData)
             {
                 ulRetCode = STATUS_NO_MEMORY;
@@ -748,7 +775,8 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
 
     if (NULL != pszData)
     {
-        HeapFree(GetProcessHeap(), 0, pszData);
+        //HeapFree(GetProcessHeap(), 0, pszData);
+        free(pszData);
         pszData = NULL;
     }
 
@@ -788,9 +816,10 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
     // total doesn't cause a stack overflow (depends on your compiler settings) 
     // However, they are shown here as dynamic to allow for easier expansion 
     // 
-    lpCSAddrInfo = (LPCSADDR_INFO)HeapAlloc(GetProcessHeap(),
-        HEAP_ZERO_MEMORY,
-        sizeof(CSADDR_INFO));
+    lpCSAddrInfo = (LPCSADDR_INFO)calloc(sizeof(CSADDR_INFO), 1);
+    //lpCSAddrInfo = (LPCSADDR_INFO)HeapAlloc(GetProcessHeap(),
+    //    HEAP_ZERO_MEMORY,
+    //    sizeof(CSADDR_INFO));
     if (NULL == lpCSAddrInfo)
     {
         wprintf(L"!ERROR! | Unable to allocate memory for CSADDR_INFO\n");
@@ -820,13 +849,14 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
         }
     }
 
-    if (CXN_SUCCESS == ulRetCode) {
+    if (CXN_SUCCESS == ulRetCode)
+    {
 
         // 
         // Setting address family to AF_BTH indicates winsock2 to use Bluetooth port 
         // 
         SockAddrBthLocal.addressFamily = AF_BTH;
-        SockAddrBthLocal.port = 30;                                             ///PORT
+        SockAddrBthLocal.port = BT_PORT_ANY;                                             ///PORT
 
         // 
         // bind() associates a local address and port combination 
@@ -856,7 +886,8 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
         }
     }
 
-    if (CXN_SUCCESS == ulRetCode) {
+    if (CXN_SUCCESS == ulRetCode)
+    {
         // 
         // CSADDR_INFO 
         // 
@@ -890,9 +921,10 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
     if (CXN_SUCCESS == ulRetCode)
     {
         cbInstanceNameSize += sizeof(CXN_INSTANCE_STRING) + 1;
-        pszInstanceName = (LPWSTR)HeapAlloc(GetProcessHeap(),
-            HEAP_ZERO_MEMORY,
-            cbInstanceNameSize);
+        pszInstanceName = (LPWSTR)calloc(cbInstanceNameSize, 1);
+        //pszInstanceName = (LPWSTR)HeapAlloc(GetProcessHeap(),
+        //    HEAP_ZERO_MEMORY,
+        //    cbInstanceNameSize);
         if (NULL == pszInstanceName)
         {
             wprintf(L"-FATAL- | HeapAlloc failed | out of memory | gle = [%d] \n", GetLastError());
@@ -963,35 +995,64 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
             // 
             BOOL bContinue = TRUE;
 
+            void* pTmp = NULL;
+            int   recvdTmp = 0;
+            int   toRecvTmp = 0;
 
-            //recv size
             int sz[3] = { 0 };
-            recv(ClientSocket,
-                (char*)sz,
-                8,
-                0);
+
+            pTmp = (void*)sz;
+            toRecvTmp = 8;
+            while (toRecvTmp != 0)
+            {
+                //recv size
+                recvdTmp = recv(
+                    ClientSocket,
+                    (char*)pTmp,
+                    toRecvTmp,
+                    0);
+                pTmp = (char*)pTmp + recvdTmp;
+                toRecvTmp -= recvdTmp;
+            }
+            pTmp = NULL;
+            toRecvTmp = 0;
 
             if (sz[0] > 0)
             {
                 //name allocate
-                pszName = (char*)HeapAlloc(GetProcessHeap(),
-                    HEAP_ZERO_MEMORY,
-                    sz[1] + 1);
+                pszName = (char*)calloc(sz[1] + 1, 1);
+                //pszName = (char*)HeapAlloc(GetProcessHeap(),
+                //    HEAP_ZERO_MEMORY,
+                //    sz[1] + 1);
                 if (NULL == pszName)
                 {
                     wprintf(L"-FATAL- | HeapAlloc failed | out of memory | gle = [%d] \n", GetLastError());
                     ulRetCode = CXN_ERROR;
                     break;
                 }
-                recv(ClientSocket,
-                    (char*)pszName,
-                    sz[1],
-                    0);
+
+                pTmp = (void*)pszName;
+                toRecvTmp = sz[1];
+                while (toRecvTmp != 0)
+                {
+                    //recv fname
+                    recvdTmp = recv(
+                        ClientSocket,
+                        (char*)pTmp,
+                        toRecvTmp,
+                        0);
+                    pTmp = (char*)pTmp + recvdTmp;
+                    toRecvTmp -= recvdTmp;
+                }
+                pTmp = NULL;
+                toRecvTmp = 0;
+
                 pszName[sz[1]] = '\0';
 
-                pszDataBuffer = (char*)HeapAlloc(GetProcessHeap(),
-                    HEAP_ZERO_MEMORY,
-                    sz[0]);
+                pszDataBuffer = (char*)calloc(sz[0], 1);
+                //pszDataBuffer = (char*)HeapAlloc(GetProcessHeap(),
+                //    HEAP_ZERO_MEMORY,
+                //    sz[0]);
                 if (NULL == pszDataBuffer)
                 {
                     wprintf(L"-FATAL- | HeapAlloc failed | out of memory | gle = [%d] \n", GetLastError());
@@ -1003,21 +1064,34 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
             }
             else
             {
-                wchar_t* remoteName = (wchar_t*)HeapAlloc(GetProcessHeap(),
-                    HEAP_ZERO_MEMORY,
-                    sz[1] + 1);
+                wchar_t* remoteName = (wchar_t*)calloc(sz[1] + 1, 1);
+                //wchar_t* remoteName = (wchar_t*)HeapAlloc(GetProcessHeap(),
+                //    HEAP_ZERO_MEMORY,
+                //    sz[1] + 1);
                 if (NULL == remoteName)
                 {
                     wprintf(L"-FATAL- | HeapAlloc failed | out of memory | gle = [%d] \n", GetLastError());
                     ulRetCode = CXN_ERROR;
                     break;
                 }
-                
-                int n = recv(ClientSocket,
-                    (char*)remoteName,
-                    sz[1],
-                    0);
-                remoteName[sz[1] - 1] = L'\0';
+
+                pTmp = (void*)remoteName;
+                toRecvTmp = sz[1];
+                while (toRecvTmp != 0)
+                {
+                    //recv remote name
+                    recvdTmp = recv(
+                        ClientSocket,
+                        (char*)pTmp,
+                        toRecvTmp,
+                        0);
+                    pTmp = (char*)pTmp + recvdTmp;
+                    toRecvTmp -= recvdTmp;
+                }
+                pTmp = NULL;
+                toRecvTmp = 0;
+
+                remoteName[sz[1] / 2] = L'\0';
 
                 SOCKADDR_BTH RemoteBthAddr = { 0 };
                 ulRetCode = NameToBthAddr(remoteName, &RemoteBthAddr);
@@ -1032,7 +1106,8 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
 
                     if (NULL != remoteName)
                     {
-                        HeapFree(GetProcessHeap(), 0, remoteName);
+                        //HeapFree(GetProcessHeap(), 0, remoteName);
+                        free(remoteName);
                         remoteName = NULL;
                     }
                     //wprintf(L"Ok - server thread\n");
@@ -1040,15 +1115,26 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                 }
                 else if (sz[0] == -2) // file
                 {
-                    // recv file name size
-                    recv(ClientSocket,
-                        (char*)(&sz[2]),
-                        4,
-                        0);
+                    pTmp = (void*)(&sz[2]);
+                    toRecvTmp = 4;
+                    while (toRecvTmp != 0)
+                    {
+                        // recv file name size
+                        recvdTmp = recv(
+                            ClientSocket,
+                            (char*)pTmp,
+                            toRecvTmp,
+                            0);
+                        pTmp = (char*)pTmp + recvdTmp;
+                        toRecvTmp -= recvdTmp;
+                    }
+                    pTmp = NULL;
+                    toRecvTmp = 0;
 
-                    char* fileName = (char*)HeapAlloc(GetProcessHeap(),
-                        HEAP_ZERO_MEMORY,
-                        sz[2] + 1);
+                    char* fileName = (char*)calloc(sz[2] + 1, 1);
+                    //char* fileName = (char*)HeapAlloc(GetProcessHeap(),
+                    //    HEAP_ZERO_MEMORY,
+                    //    sz[2] + 1);
                     if (NULL == fileName)
                     {
                         wprintf(L"-FATAL- | HeapAlloc failed | out of memory | gle = [%d] \n", GetLastError());
@@ -1057,16 +1143,30 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                     }
                     fileName[sz[2]] = L'\0';
 
-                    // recv file name
-                    recv(ClientSocket,
-                        (char*)fileName,
-                        sz[2],
-                        0);
+                    pTmp = (void*)fileName;
+                    toRecvTmp = sz[2];
+                    while (toRecvTmp != 0)
+                    {
+                        // recv file name size
+                        recvdTmp = recv(
+                            ClientSocket,
+                            (char*)pTmp,
+                            toRecvTmp,
+                            0);
+                        pTmp = (char*)pTmp + recvdTmp;
+                        toRecvTmp -= recvdTmp;
+                    }
+                    pTmp = NULL;
+                    toRecvTmp = 0;
+
+                    printf("Sending file to %ws: %s\n", remoteName, fileName);
+
                     RunClientMode(RemoteBthAddr, 1, 2, fileName);
 
                     if (NULL != fileName)
                     {
-                        HeapFree(GetProcessHeap(), 0, fileName);
+                        //HeapFree(GetProcessHeap(), 0, fileName);
+                        free(fileName);
                         fileName = NULL;
                     }
                     //wprintf(L"Ok - server thread\n");
@@ -1192,18 +1292,21 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
 
     if (NULL != lpCSAddrInfo)
     {
-        HeapFree(GetProcessHeap(), 0, lpCSAddrInfo);
+        //HeapFree(GetProcessHeap(), 0, lpCSAddrInfo);
+        free(lpCSAddrInfo);
         lpCSAddrInfo = NULL;
     }
     if (NULL != pszInstanceName)
     {
-        HeapFree(GetProcessHeap(), 0, pszInstanceName);
+        //HeapFree(GetProcessHeap(), 0, pszInstanceName);
+        free(pszInstanceName);
         pszInstanceName = NULL;
     }
 
     if (NULL != pszDataBuffer)
     {
-        HeapFree(GetProcessHeap(), 0, pszDataBuffer);
+        //HeapFree(GetProcessHeap(), 0, pszDataBuffer);
+        free(pszDataBuffer);
         pszDataBuffer = NULL;
     }
 
