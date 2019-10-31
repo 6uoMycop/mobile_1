@@ -8,6 +8,7 @@
 #include <intsafe.h>
 #include <thread>
 #include <wchar.h>
+#include <mutex>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -30,7 +31,7 @@ wchar_t g_szRemoteAddr[CXN_BDADDR_STR_LEN + 1] = { 0 }; // 1 extra for trailing 
 char g_szPath[512] = { 0 };
 int  g_ulMaxCxnCycles = 1;
 
-
+std::mutex outputMut;
 
 ULONG NameToBthAddr(_In_ const LPWSTR pszRemoteName, _Out_ PSOCKADDR_BTH pRemoteBthAddr);
 ULONG RunClientMode(_In_ SOCKADDR_BTH ululRemoteBthAddr, _In_ int iMaxCxnCycles, _In_ int mode, _In_ char* filePathToSend = NULL);
@@ -217,13 +218,18 @@ int _cdecl wmain(_In_ int argc, _In_reads_(argc)wchar_t* argv[])
     DWORD pcNameLen = BTH_MAX_NAME_SIZE;
     if (!GetComputerNameW(g_szMyName, &pcNameLen))
     {
+        outputMut.lock();
         wprintf(L"=CRITICAL= | GetComputerName() call failed. WSAGetLastError=[%d]\n", WSAGetLastError());
+        outputMut.unlock();
         ulRetCode = CXN_ERROR;
     }
 
-    // get resolution from cmd
-    gWidth  = _wtoi(argv[1]);
-    gHeight = _wtoi(argv[2]);
+    if (argc >= 3)
+    {
+        // get resolution from cmd
+        gWidth = _wtoi(argv[1]);
+        gHeight = _wtoi(argv[2]);
+    }
 
     // 
     // Ask for Winsock version 2.2. 
@@ -233,7 +239,9 @@ int _cdecl wmain(_In_ int argc, _In_reads_(argc)wchar_t* argv[])
         ulRetCode = WSAStartup(MAKEWORD(2, 2), &WSAData);
         if (CXN_SUCCESS != ulRetCode)
         {
+            outputMut.lock();
             wprintf(L"-FATAL- | Unable to initialize Winsock version 2.2\n");
+            outputMut.unlock();
         }
     }
 
@@ -247,28 +255,38 @@ int _cdecl wmain(_In_ int argc, _In_reads_(argc)wchar_t* argv[])
     {
         while (1)
         {
+            outputMut.lock();
             printf("connect to device: 1 - by address; 2 - by name\n");
+            outputMut.unlock();
             scanf("%i", &mode);
 
             if (mode == 1)
             {
+                outputMut.lock();
                 printf("Enter address\n");
+                outputMut.unlock();
                 wscanf(L"%s", &g_szRemoteAddr);
             }
             else if (mode == 2)
             {
+                outputMut.lock();
                 printf("Enter name\n");
+                outputMut.unlock();
                 wscanf(L"%s", &g_szRemoteName);
             }
             else
             {
+                outputMut.lock();
                 printf("wrong input. try again\n");
+                outputMut.unlock();
                 continue;
             }
 
             while (1)
             {
+                outputMut.lock();
                 printf("now choose: 1 - get screenshot; 2<PATH> - get file\n");
+                outputMut.unlock();
                 scanf("%s", &arg);
                 if (arg[0] == '1')
                 {
@@ -281,7 +299,9 @@ int _cdecl wmain(_In_ int argc, _In_reads_(argc)wchar_t* argv[])
                 }
                 else
                 {
+                    outputMut.lock();
                     printf("try again\n");
+                    outputMut.unlock();
                 }
             }
 
@@ -297,13 +317,14 @@ int _cdecl wmain(_In_ int argc, _In_reads_(argc)wchar_t* argv[])
                 ulRetCode = NameToBthAddr(g_szRemoteName, &RemoteBthAddr);
                 if (CXN_SUCCESS != ulRetCode)
                 {
+                    outputMut.lock();
                     wprintf(L"-FATAL- | Unable to get address of the remote radio having name %s\n", g_szRemoteName);
+                    outputMut.unlock();
                 }
 
                 if (CXN_SUCCESS == ulRetCode)
                 {
                     ulRetCode = RunClientMode(RemoteBthAddr, 1, (arg[0] == '1' ? 3 : 4));
-                    //wprintf(L"Ok\n");
                 }
 
                 memset(g_szRemoteName, 0, sizeof(g_szRemoteName));
@@ -324,13 +345,14 @@ int _cdecl wmain(_In_ int argc, _In_reads_(argc)wchar_t* argv[])
                     &iAddrLen);
                 if (CXN_SUCCESS != ulRetCode)
                 {
+                    outputMut.lock();
                     wprintf(L"-FATAL- | Unable to get address of the remote radio having formated address-string %s\n", g_szRemoteAddr);
+                    outputMut.unlock();
                 }
 
                 if (CXN_SUCCESS == ulRetCode)
                 {
                     ulRetCode = RunClientMode(RemoteBthAddr, 1, (arg[0] == '1' ? 3 : 4));
-                    //wprintf(L"Ok\n");
                 }
 
                 memset(g_szRemoteAddr, 0, sizeof(g_szRemoteAddr));
@@ -368,7 +390,9 @@ ULONG NameToBthAddr(_In_ const LPWSTR pszRemoteName, _Out_ PSOCKADDR_BTH pRemote
     if (NULL == pWSAQuerySet)
     {
         iResult = STATUS_NO_MEMORY;
+        outputMut.lock();
         wprintf(L"!ERROR! | Unable to allocate memory for WSAQUERYSET\n");
+        outputMut.unlock();
     }
 
     // 
@@ -399,7 +423,7 @@ ULONG NameToBthAddr(_In_ const LPWSTR pszRemoteName, _Out_ PSOCKADDR_BTH pRemote
 
             if (0 == iRetryCount)
             {
-                // wprintf(L"*INFO* | Inquiring device from cache...\n");
+                //wprintf(L"*INFO* | Inquiring device from cache...\n");
             }
             else
             {
@@ -419,10 +443,12 @@ ULONG NameToBthAddr(_In_ const LPWSTR pszRemoteName, _Out_ PSOCKADDR_BTH pRemote
                 // we don't have a direct mechanism to determine when remote 
                 // name requests have completed. 
                 // 
+                outputMut.lock();
                 wprintf(L"*INFO* | Unable to find device.  Waiting for %d seconds before re-inquiry...\n", CXN_DELAY_NEXT_INQUIRY);
+                outputMut.unlock();
                 Sleep(CXN_DELAY_NEXT_INQUIRY * 1000);
 
-                wprintf(L"*INFO* | Inquiring device ...\n");
+                //wprintf(L"*INFO* | Inquiring device ...\n");
             }
 
             // 
@@ -446,7 +472,9 @@ ULONG NameToBthAddr(_In_ const LPWSTR pszRemoteName, _Out_ PSOCKADDR_BTH pRemote
             }
             else if (0 < iRetryCount)
             {
+                outputMut.lock();
                 wprintf(L"=CRITICAL= | WSALookupServiceBegin() failed with error code %d, WSAGetLastError = %d\n", iResult, WSAGetLastError());
+                outputMut.unlock();
                 break;
             }
 
@@ -506,14 +534,18 @@ ULONG NameToBthAddr(_In_ const LPWSTR pszRemoteName, _Out_ PSOCKADDR_BTH pRemote
                         //    ulPQSSize);
                         if (NULL == pWSAQuerySet)
                         {
+                            outputMut.lock();
                             wprintf(L"!ERROR! | Unable to allocate memory for WSAQERYSET\n");
+                            outputMut.unlock();
                             iResult = STATUS_NO_MEMORY;
                             bContinueLookup = FALSE;
                         }
                     }
                     else
                     {
+                        outputMut.lock();
                         wprintf(L"=CRITICAL= | WSALookupServiceNext() failed with error code %d\n", iResult);
+                        outputMut.unlock();
                         bContinueLookup = FALSE;
                     }
                 }
@@ -588,7 +620,9 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
                 input = fopen("scrsh.bmp", "rb");
                 if (input == NULL)
                 {
+                    outputMut.lock();
                     printf("open file error. try again\n");
+                    outputMut.unlock();
                 }
             }
             else if (mode == 2)
@@ -596,13 +630,17 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
                 input = fopen(filePathToSend, "rb");
                 if (input == NULL)
                 {
+                    outputMut.lock();
                     printf("fopen error\n");
+                    outputMut.unlock();
                     return 2;
                 }
             }
             else
             {
+                outputMut.lock();
                 printf("wrong input");
+                outputMut.unlock();
             }
 
             fseek(input, 0L, SEEK_END);
@@ -636,7 +674,9 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
             if (NULL == pszData)
             {
                 ulRetCode = STATUS_NO_MEMORY;
+                outputMut.lock();
                 wprintf(L"=CRITICAL= | HeapAlloc failed | out of memory, gle = [%d] \n", GetLastError());
+                outputMut.unlock();
             }
 
             // set name len
@@ -673,7 +713,9 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
             if (NULL == pszData)
             {
                 ulRetCode = STATUS_NO_MEMORY;
+                outputMut.lock();
                 wprintf(L"=CRITICAL= | HeapAlloc failed | out of memory, gle = [%d] \n", GetLastError());
+                outputMut.unlock();
             }
 
             // set device name len
@@ -702,7 +744,9 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
         }
         else
         {
+            outputMut.lock();
             printf("error\n");
+            outputMut.unlock();
         }
     }
 
@@ -721,7 +765,9 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
             LocalSocket = socket(AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
             if (INVALID_SOCKET == LocalSocket)
             {
+                outputMut.lock();
                 wprintf(L"=CRITICAL= | socket() call failed. WSAGetLastError = [%d]\n", WSAGetLastError());
+                outputMut.unlock();
                 ulRetCode = CXN_ERROR;
                 break;
             }
@@ -733,7 +779,9 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
                 (struct sockaddr*) & SockAddrBthServer,
                 sizeof(SOCKADDR_BTH)))
             {
+                outputMut.lock();
                 wprintf(L"=CRITICAL= | connect() call failed. WSAGetLastError=[%d]\n", WSAGetLastError());
+                outputMut.unlock();
                 ulRetCode = CXN_ERROR;
                 break;
             }
@@ -747,7 +795,9 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
                 sz,
                 0))
             {
+                outputMut.lock();
                 wprintf(L"=CRITICAL= | send() call failed w/socket = [0x%I64X], szData = [%p]. WSAGetLastError=[%d]\n", (ULONG64)LocalSocket, pszData, WSAGetLastError());
+                outputMut.unlock();
                 ulRetCode = CXN_ERROR;
                 break;
             }
@@ -757,7 +807,9 @@ ULONG RunClientMode(_In_ SOCKADDR_BTH RemoteAddr, _In_ int iMaxCxnCycles, _In_ i
             // 
             if (SOCKET_ERROR == closesocket(LocalSocket))
             {
+                outputMut.lock();
                 wprintf(L"=CRITICAL= | closesocket() call failed w/socket = [0x%I64X]. WSAGetLastError=[%d]\n", (ULONG64)LocalSocket, WSAGetLastError());
+                outputMut.unlock();
                 ulRetCode = CXN_ERROR;
                 break;
             }
@@ -822,7 +874,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
     //    sizeof(CSADDR_INFO));
     if (NULL == lpCSAddrInfo)
     {
+        outputMut.lock();
         wprintf(L"!ERROR! | Unable to allocate memory for CSADDR_INFO\n");
+        outputMut.unlock();
         ulRetCode = CXN_ERROR;
     }
 
@@ -831,7 +885,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
 
         if (!GetComputerName(szThisComputerName, &dwLenComputerName))
         {
+            outputMut.lock();
             wprintf(L"=CRITICAL= | GetComputerName() call failed. WSAGetLastError=[%d]\n", WSAGetLastError());
+            outputMut.unlock();
             ulRetCode = CXN_ERROR;
         }
     }
@@ -844,7 +900,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
         LocalSocket = socket(AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
         if (INVALID_SOCKET == LocalSocket)
         {
+            outputMut.lock();
             wprintf(L"=CRITICAL= | socket() call failed. WSAGetLastError = [%d]\n", WSAGetLastError());
+            outputMut.unlock();
             ulRetCode = CXN_ERROR;
         }
     }
@@ -868,7 +926,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
             (struct sockaddr*) & SockAddrBthLocal,
             sizeof(SOCKADDR_BTH)))
         {
+            outputMut.lock();
             wprintf(L"=CRITICAL= | bind() call failed w/socket = [0x%I64X]. WSAGetLastError=[%d]\n", (ULONG64)LocalSocket, WSAGetLastError());
+            outputMut.unlock();
             ulRetCode = CXN_ERROR;
         }
     }
@@ -881,7 +941,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
             &iAddrLen);
         if (SOCKET_ERROR == ulRetCode)
         {
+            outputMut.lock();
             wprintf(L"=CRITICAL= | getsockname() call failed w/socket = [0x%I64X]. WSAGetLastError=[%d]\n", (ULONG64)LocalSocket, WSAGetLastError());
+            outputMut.unlock();
             ulRetCode = CXN_ERROR;
         }
     }
@@ -913,7 +975,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
         res = StringCchLength(szThisComputerName, sizeof(szThisComputerName), &cbInstanceNameSize);
         if (FAILED(res))
         {
+            outputMut.lock();
             wprintf(L"-FATAL- | ComputerName specified is too large\n");
+            outputMut.unlock();
             ulRetCode = CXN_ERROR;
         }
     }
@@ -927,7 +991,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
         //    cbInstanceNameSize);
         if (NULL == pszInstanceName)
         {
+            outputMut.lock();
             wprintf(L"-FATAL- | HeapAlloc failed | out of memory | gle = [%d] \n", GetLastError());
+            outputMut.unlock();
             ulRetCode = CXN_ERROR;
         }
     }
@@ -951,7 +1017,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
         // 
         if (SOCKET_ERROR == WSASetService(&wsaQuerySet, RNRSERVICE_REGISTER, 0))
         {
+            outputMut.lock();
             wprintf(L"=CRITICAL= | WSASetService() call failed. WSAGetLastError=[%d]\n", WSAGetLastError());
+            outputMut.unlock();
             ulRetCode = CXN_ERROR;
         }
     }
@@ -962,7 +1030,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
     if (CXN_SUCCESS == ulRetCode) {
         if (SOCKET_ERROR == listen(LocalSocket, CXN_DEFAULT_LISTEN_BACKLOG))
         {
+            outputMut.lock();
             wprintf(L"=CRITICAL= | listen() call failed w/socket = [0x%I64X]. WSAGetLastError=[%d]\n", (ULONG64)LocalSocket, WSAGetLastError());
+            outputMut.unlock();
             ulRetCode = CXN_ERROR;
         }
     }
@@ -985,7 +1055,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
             ClientSocket = accept(LocalSocket, NULL, NULL);
             if (INVALID_SOCKET == ClientSocket)
             {
+                outputMut.lock();
                 wprintf(L"=CRITICAL= | accept() call failed. WSAGetLastError=[%d]\n", WSAGetLastError());
+                outputMut.unlock();
                 ulRetCode = CXN_ERROR;
                 break; // Break out of the for loop 
             }
@@ -1026,7 +1098,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                 //    sz[1] + 1);
                 if (NULL == pszName)
                 {
+                    outputMut.lock();
                     wprintf(L"-FATAL- | HeapAlloc failed | out of memory | gle = [%d] \n", GetLastError());
+                    outputMut.unlock();
                     ulRetCode = CXN_ERROR;
                     break;
                 }
@@ -1055,7 +1129,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                 //    sz[0]);
                 if (NULL == pszDataBuffer)
                 {
+                    outputMut.lock();
                     wprintf(L"-FATAL- | HeapAlloc failed | out of memory | gle = [%d] \n", GetLastError());
+                    outputMut.unlock();
                     ulRetCode = CXN_ERROR;
                     break;
                 }
@@ -1070,7 +1146,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                 //    sz[1] + 1);
                 if (NULL == remoteName)
                 {
+                    outputMut.lock();
                     wprintf(L"-FATAL- | HeapAlloc failed | out of memory | gle = [%d] \n", GetLastError());
+                    outputMut.unlock();
                     ulRetCode = CXN_ERROR;
                     break;
                 }
@@ -1097,7 +1175,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                 ulRetCode = NameToBthAddr(remoteName, &RemoteBthAddr);
                 if (CXN_SUCCESS != ulRetCode)
                 {
+                    outputMut.lock();
                     wprintf(L"-FATAL- | Unable to get address of the remote radio having name %s\n", g_szRemoteName);
+                    outputMut.unlock();
                 }
 
                 if (sz[0] == -1) // screen
@@ -1137,7 +1217,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                     //    sz[2] + 1);
                     if (NULL == fileName)
                     {
+                        outputMut.lock();
                         wprintf(L"-FATAL- | HeapAlloc failed | out of memory | gle = [%d] \n", GetLastError());
+                        outputMut.unlock();
                         ulRetCode = CXN_ERROR;
                         break;
                     }
@@ -1159,7 +1241,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                     pTmp = NULL;
                     toRecvTmp = 0;
 
+                    outputMut.lock();
                     printf("Sending file to %ws: %s\n", remoteName, fileName);
+                    outputMut.unlock();
 
                     RunClientMode(RemoteBthAddr, 1, 2, fileName);
 
@@ -1174,7 +1258,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                 }
                 else
                 {
+                    outputMut.lock();
                     printf("error\n");
+                    outputMut.unlock();
                 }
             }
 
@@ -1186,11 +1272,13 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
             memset(dots, '>', 10);
             char spaces[10];
             memset(spaces, ' ', 10);
+
+            outputMut.lock();
             while (bContinue && (uiTotalLengthReceived <= sz[0]))
             {
                 percent = ((float)uiTotalLengthReceived / (float)sz[0]) * 100;
                 printf("\rProgress: %i%% [", percent);
-                fwrite(dots,   1, percent / 10,                  stdout);
+                fwrite(dots,   1,      percent / 10, stdout);
                 fwrite(spaces, 1, 10 - percent / 10, stdout);
                 printf("]");
                 // 
@@ -1208,7 +1296,8 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                     (sz[0] - uiTotalLengthReceived),
                     0);
 
-                switch (iLengthReceived) {
+                switch (iLengthReceived)
+                {
                 case 0: // socket connection has been closed gracefully 
                     bContinue = FALSE;
                     break;
@@ -1237,6 +1326,7 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                     break;
                 }
             }
+            outputMut.unlock();
 
 
 
@@ -1245,16 +1335,20 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
 
                 if (sz[0] != uiTotalLengthReceived)
                 {
+                    outputMut.lock();
                     wprintf(L"+WARNING+ | Data transfer aborted mid-stream. Actual Length = [%d]\n", uiTotalLengthReceived);
+                    outputMut.unlock();
                 }
 
                 FILE* file = fopen(pszName, "wb");
                 fwrite(pszDataBuffer, sizeof(char), sz[0], file);
                 fclose(file);
 
+                outputMut.lock();
                 printf("\rProgress: %i%% [", percent);
                 fwrite(dots, 1, 10, stdout);
                 printf("]\n");
+                outputMut.unlock();
 
                 // auto open
                 system(pszName);
@@ -1264,7 +1358,9 @@ ULONG RunServerMode(_In_ int iMaxCxnCycles)
                 // 
                 if (SOCKET_ERROR == closesocket(ClientSocket))
                 {
+                    outputMut.lock();
                     wprintf(L"=CRITICAL= | closesocket() call failed w/socket = [0x%I64X]. WSAGetLastError=[%d]\n", (ULONG64)LocalSocket, WSAGetLastError());
+                    outputMut.unlock();
                     ulRetCode = CXN_ERROR;
                 }
                 else
